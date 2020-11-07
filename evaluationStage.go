@@ -40,6 +40,14 @@ type evaluationStage struct {
 
 	// regardless of which type check is used, this string format will be used as the error message for type errors
 	typeErrorFormat string
+
+	// evaluation result
+	result interface{}
+
+	// if evaluationStage contains evaluation of variable then its name is stored in variableName
+	// also variableFlag indicates that there is a variable usage in this evaluationStage or its children
+	variableFlag bool
+	variableName *string
 }
 
 var (

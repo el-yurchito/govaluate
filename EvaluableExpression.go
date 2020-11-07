@@ -32,9 +32,17 @@ type EvaluableExpression struct {
 	*/
 	ChecksTypes bool
 
-	tokens           []ExpressionToken
+	/*
+		Keep the records of stages and variable names which caused `true` result.
+	*/
+	trueCausingStages []*evaluationStage
+	trueCausingVars   map[string]bool
+	visitedStages     map[*evaluationStage]bool
+
 	evaluationStages *evaluationStage
 	inputExpression  string
+	tokens           []ExpressionToken
+	tokensQty        int
 }
 
 /*
@@ -73,6 +81,7 @@ func NewEvaluableExpressionFromTokens(tokens []ExpressionToken) (*EvaluableExpre
 	if err != nil {
 		return nil, err
 	}
+	ret.tokensQty = len(ret.tokens)
 
 	ret.evaluationStages, err = planStages(ret.tokens)
 	if err != nil {
@@ -115,6 +124,7 @@ func NewEvaluableExpressionWithFunctions(expression string, functions map[string
 	if err != nil {
 		return nil, err
 	}
+	ret.tokensQty = len(ret.tokens)
 
 	ret.evaluationStages, err = planStages(ret.tokens)
 	if err != nil {
@@ -154,19 +164,76 @@ func (this EvaluableExpression) Eval(parameters Parameters) (interface{}, error)
 		return nil, nil
 	}
 
+	this.trueCausingStages = make([]*evaluationStage, 0, this.tokensQty)
+	this.trueCausingVars = make(map[string]bool, this.tokensQty)
+	this.visitedStages = make(map[*evaluationStage]bool, this.tokensQty)
+
 	if parameters != nil {
 		parameters = &sanitizedParameters{parameters}
 	} else {
 		parameters = DUMMY_PARAMETERS
 	}
 
-	return this.evaluateStage(this.evaluationStages, parameters)
+	result, err := this.evaluateStage(this.evaluationStages, parameters)
+	if err == nil {
+		for _, stage := range this.trueCausingStages {
+			this.exploreTrueCausingVars(stage)
+		}
+	}
+	return result, err
 }
 
-func (this EvaluableExpression) evaluateStage(stage *evaluationStage, parameters Parameters) (interface{}, error) {
+func (this *EvaluableExpression) exploreTrueCausingVars(stage *evaluationStage) {
+	// avoid visiting stages repeatedly
+	if this.visitedStages[stage] {
+		return
+	}
+	this.visitedStages[stage] = true
 
-	var left, right interface{}
-	var err error
+	// don't go down to subtrees those resulted as `false`
+	if stage.result == false {
+		return
+	}
+
+	if stage.variableName != nil {
+		this.trueCausingVars[*stage.variableName] = true
+	}
+	if stage.leftStage != nil {
+		this.exploreTrueCausingVars(stage.leftStage)
+	}
+	if stage.rightStage != nil {
+		this.exploreTrueCausingVars(stage.rightStage)
+	}
+}
+
+func (this *EvaluableExpression) evaluateStage(stage *evaluationStage, parameters Parameters) (result interface{}, err error) {
+
+	defer func() {
+		if err != nil {
+			return
+		}
+
+		// store the result of this stage
+		// and pass variable flag up to the root
+		stage.result = result
+		stage.variableFlag = stage.variableName != nil
+		if !stage.variableFlag {
+			stage.variableFlag = stage.leftStage != nil && stage.leftStage.variableFlag
+		}
+		if !stage.variableFlag {
+			stage.variableFlag = stage.rightStage != nil && stage.rightStage.variableFlag
+		}
+
+		// enqueue this stage to sort it out afterwards
+		if result == true {
+			this.trueCausingStages = append(this.trueCausingStages, stage)
+		}
+	}()
+
+	var (
+		left  interface{}
+		right interface{}
+	)
 
 	if stage.leftStage != nil {
 		left, err = this.evaluateStage(stage.leftStage, parameters)
@@ -181,10 +248,13 @@ func (this EvaluableExpression) evaluateStage(stage *evaluationStage, parameters
 			if left == false {
 				return false, nil
 			}
-		case OR:
-			if left == true {
-				return true, nil
-			}
+		// suppress lazy OR evaluation in order to get all evaluation parts with result equaling true
+		/*
+			case OR:
+				if left == true {
+					return true, nil
+				}
+		*/
 		case COALESCE:
 			if left != nil {
 				return left, nil
@@ -252,6 +322,12 @@ func typeCheck(check stageTypeCheck, value interface{}, symbol OperatorSymbol, f
 func (this EvaluableExpression) Tokens() []ExpressionToken {
 
 	return this.tokens
+}
+
+// TrueCausingVars returns a map of variable names which were involved in
+// boolean expressions' evaluation those resulted as true
+func (this EvaluableExpression) TrueCausingVars() map[string]bool {
+	return this.trueCausingVars
 }
 
 /*

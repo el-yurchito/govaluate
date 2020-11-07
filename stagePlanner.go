@@ -370,11 +370,14 @@ func planAccessor(stream *tokenStream) (*evaluationStage, error) {
 */
 func planValue(stream *tokenStream) (*evaluationStage, error) {
 
-	var token ExpressionToken
-	var symbol OperatorSymbol
-	var ret *evaluationStage
-	var operator evaluationOperator
-	var err error
+	var (
+		ret      *evaluationStage
+		symbol   OperatorSymbol
+		token    ExpressionToken
+		operator evaluationOperator
+		variable *string
+		err      error
+	)
 
 	if !stream.hasNext() {
 		return nil, nil
@@ -413,7 +416,9 @@ func planValue(stream *tokenStream) (*evaluationStage, error) {
 		return nil, nil
 
 	case VARIABLE:
-		operator = makeParameterStage(token.Value.(string))
+		tokenStrValue := token.Value.(string)
+		variable = &tokenStrValue
+		operator = makeParameterStage(tokenStrValue)
 
 	case NUMERIC:
 		fallthrough
@@ -439,8 +444,9 @@ func planValue(stream *tokenStream) (*evaluationStage, error) {
 	}
 
 	return &evaluationStage{
-		symbol:   symbol,
-		operator: operator,
+		symbol:       symbol,
+		variableName: variable,
+		operator:     operator,
 	}, nil
 }
 
