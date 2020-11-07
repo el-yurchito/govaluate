@@ -138,7 +138,7 @@ func NewEvaluableExpressionWithFunctions(expression string, functions map[string
 /*
 	Same as `Eval`, but automatically wraps a map of parameters into a `govalute.Parameters` structure.
 */
-func (this EvaluableExpression) Evaluate(parameters map[string]interface{}) (interface{}, error) {
+func (this *EvaluableExpression) Evaluate(parameters map[string]interface{}) (interface{}, error) {
 
 	if parameters == nil {
 		return this.Eval(nil)
@@ -158,7 +158,7 @@ func (this EvaluableExpression) Evaluate(parameters map[string]interface{}) (int
 	e.g., if the expression is "1 + 1", this will return 2.0.
 	e.g., if the expression is "foo + 1" and parameters contains "foo" = 2, this will return 3.0
 */
-func (this EvaluableExpression) Eval(parameters Parameters) (interface{}, error) {
+func (this *EvaluableExpression) Eval(parameters Parameters) (interface{}, error) {
 
 	if this.evaluationStages == nil {
 		return nil, nil
@@ -319,21 +319,21 @@ func typeCheck(check stageTypeCheck, value interface{}, symbol OperatorSymbol, f
 /*
 	Returns an array representing the ExpressionTokens that make up this expression.
 */
-func (this EvaluableExpression) Tokens() []ExpressionToken {
+func (this *EvaluableExpression) Tokens() []ExpressionToken {
 
 	return this.tokens
 }
 
 // TrueCausingVars returns a map of variable names which were involved in
 // boolean expressions' evaluation those resulted as true
-func (this EvaluableExpression) TrueCausingVars() map[string]bool {
+func (this *EvaluableExpression) TrueCausingVars() map[string]bool {
 	return this.trueCausingVars
 }
 
 /*
 	Returns the original expression used to create this EvaluableExpression.
 */
-func (this EvaluableExpression) String() string {
+func (this *EvaluableExpression) String() string {
 
 	return this.inputExpression
 }
@@ -341,7 +341,7 @@ func (this EvaluableExpression) String() string {
 /*
 	Returns an array representing the variables contained in this EvaluableExpression.
 */
-func (this EvaluableExpression) Vars() []string {
+func (this *EvaluableExpression) Vars() []string {
 	var varlist []string
 	for _, val := range this.Tokens() {
 		if val.Kind == VARIABLE {
