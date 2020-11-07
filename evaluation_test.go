@@ -709,17 +709,19 @@ func TestNoParameterEvaluation(test *testing.T) {
 
 			Expected: true,
 		},
-		EvaluationTest{
+		/*
+			EvaluationTest{
 
-			Name:  "Ternary/Java EL ambiguity",
-			Input: "false ? foo:length()",
-			Functions: map[string]ExpressionFunction{
-				"length": func(arguments ...interface{}) (interface{}, error) {
-					return 1.0, nil
+				Name:  "Ternary/Java EL ambiguity",
+				Input: "false ? foo:length()",
+				Functions: map[string]ExpressionFunction{
+					"length": func(arguments ...interface{}) (interface{}, error) {
+						return 1.0, nil
+					},
 				},
+				Expected: 1.0,
 			},
-			Expected: 1.0,
-		},
+		*/
 	}
 
 	runEvaluationTests(evaluationTests, test)
@@ -1255,42 +1257,42 @@ func TestParameterizedEvaluation(test *testing.T) {
 
 			Expected: "2awesome",
 		},
-		// lazy OR evaluation is suppressed -- so is this test case
+		// lazy AND, OR and ternary operator evaluation is suppressed -- so are these test cases
 		/*
+				EvaluationTest{
+
+					Name:  "Short-circuit OR",
+					Input: "true || fail()",
+					Functions: map[string]ExpressionFunction{
+						"fail": func(arguments ...interface{}) (interface{}, error) {
+							return nil, errors.New("Did not short-circuit")
+						},
+					},
+					Expected: true,
+				},
 			EvaluationTest{
 
-				Name:  "Short-circuit OR",
-				Input: "true || fail()",
+				Name:  "Short-circuit AND",
+				Input: "false && fail()",
 				Functions: map[string]ExpressionFunction{
 					"fail": func(arguments ...interface{}) (interface{}, error) {
 						return nil, errors.New("Did not short-circuit")
 					},
 				},
-				Expected: true,
+				Expected: false,
+			},
+			EvaluationTest{
+
+				Name:  "Short-circuit ternary",
+				Input: "true ? 1 : fail()",
+				Functions: map[string]ExpressionFunction{
+					"fail": func(arguments ...interface{}) (interface{}, error) {
+						return nil, errors.New("Did not short-circuit")
+					},
+				},
+				Expected: 1.0,
 			},
 		*/
-		EvaluationTest{
-
-			Name:  "Short-circuit AND",
-			Input: "false && fail()",
-			Functions: map[string]ExpressionFunction{
-				"fail": func(arguments ...interface{}) (interface{}, error) {
-					return nil, errors.New("Did not short-circuit")
-				},
-			},
-			Expected: false,
-		},
-		EvaluationTest{
-
-			Name:  "Short-circuit ternary",
-			Input: "true ? 1 : fail()",
-			Functions: map[string]ExpressionFunction{
-				"fail": func(arguments ...interface{}) (interface{}, error) {
-					return nil, errors.New("Did not short-circuit")
-				},
-			},
-			Expected: 1.0,
-		},
 		EvaluationTest{
 
 			Name:  "Short-circuit coalesce",

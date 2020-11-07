@@ -32,12 +32,8 @@ type EvaluableExpression struct {
 	*/
 	ChecksTypes bool
 
-	/*
-		Keep the records of stages and variable names which caused `true` result.
-	*/
-	trueCausingStages []*evaluationStage
-	trueCausingVars   map[string]bool
-	visitedStages     map[*evaluationStage]bool
+	// Keep the records of stages and variable names which caused boolean results.
+	boolFilter *boolFilter
 
 	evaluationStages *evaluationStage
 	inputExpression  string
@@ -164,46 +160,18 @@ func (this *EvaluableExpression) Eval(parameters Parameters) (interface{}, error
 		return nil, nil
 	}
 
-	this.trueCausingStages = make([]*evaluationStage, 0, this.tokensQty)
-	this.trueCausingVars = make(map[string]bool, this.tokensQty)
-	this.visitedStages = make(map[*evaluationStage]bool, this.tokensQty)
-
 	if parameters != nil {
 		parameters = &sanitizedParameters{parameters}
 	} else {
 		parameters = DUMMY_PARAMETERS
 	}
 
+	this.boolFilter = newBoolFilter(this.tokensQty)
 	result, err := this.evaluateStage(this.evaluationStages, parameters)
 	if err == nil {
-		for _, stage := range this.trueCausingStages {
-			this.exploreTrueCausingVars(stage)
-		}
+		this.boolFilter.postprocessStages()
 	}
 	return result, err
-}
-
-func (this *EvaluableExpression) exploreTrueCausingVars(stage *evaluationStage) {
-	// avoid visiting stages repeatedly
-	if this.visitedStages[stage] {
-		return
-	}
-	this.visitedStages[stage] = true
-
-	// don't go down to subtrees those resulted as `false`
-	if stage.result == false {
-		return
-	}
-
-	if stage.variableName != nil {
-		this.trueCausingVars[*stage.variableName] = true
-	}
-	if stage.leftStage != nil {
-		this.exploreTrueCausingVars(stage.leftStage)
-	}
-	if stage.rightStage != nil {
-		this.exploreTrueCausingVars(stage.rightStage)
-	}
 }
 
 func (this *EvaluableExpression) evaluateStage(stage *evaluationStage, parameters Parameters) (result interface{}, err error) {
@@ -213,9 +181,10 @@ func (this *EvaluableExpression) evaluateStage(stage *evaluationStage, parameter
 			return
 		}
 
-		// store the result of this stage
-		// and pass variable flag up to the root
+		// store the result of this stage and its parts
 		stage.result = result
+
+		// pass variable flag up to the root
 		stage.variableFlag = stage.variableName != nil
 		if !stage.variableFlag {
 			stage.variableFlag = stage.leftStage != nil && stage.leftStage.variableFlag
@@ -225,9 +194,7 @@ func (this *EvaluableExpression) evaluateStage(stage *evaluationStage, parameter
 		}
 
 		// enqueue this stage to sort it out afterwards
-		if result == true {
-			this.trueCausingStages = append(this.trueCausingStages, stage)
-		}
+		this.boolFilter.pushStageResult(stage)
 	}()
 
 	var (
@@ -244,34 +211,34 @@ func (this *EvaluableExpression) evaluateStage(stage *evaluationStage, parameter
 
 	if stage.isShortCircuitable() {
 		switch stage.symbol {
-		case AND:
-			if left == false {
-				return false, nil
-			}
-		// suppress lazy OR evaluation in order to get all evaluation parts with result equaling true
-		/*
-			case OR:
-				if left == true {
-					return true, nil
-				}
-		*/
 		case COALESCE:
 			if left != nil {
 				return left, nil
 			}
-
-		case TERNARY_TRUE:
-			if left == false {
-				right = shortCircuitHolder
-			}
-		case TERNARY_FALSE:
-			if left != nil {
-				right = shortCircuitHolder
-			}
+			// suppress lazy AND, OR and ternary operator evaluation in order to
+			// collect all parts of the expression that have boolean results
+			/*
+				case AND:
+					if left == false {
+						return false, nil
+					}
+				case OR:
+					if left == true {
+						return true, nil
+					}
+				case TERNARY_TRUE:
+					if left == false {
+						right = shortCircuitHolder
+					}
+				case TERNARY_FALSE:
+					if left != nil {
+						right = shortCircuitHolder
+					}
+			*/
 		}
 	}
 
-	if right != shortCircuitHolder && stage.rightStage != nil {
+	if stage.rightStage != nil {
 		right, err = this.evaluateStage(stage.rightStage, parameters)
 		if err != nil {
 			return nil, err
@@ -324,12 +291,6 @@ func (this *EvaluableExpression) Tokens() []ExpressionToken {
 	return this.tokens
 }
 
-// TrueCausingVars returns a map of variable names which were involved in
-// boolean expressions' evaluation those resulted as true
-func (this *EvaluableExpression) TrueCausingVars() map[string]bool {
-	return this.trueCausingVars
-}
-
 /*
 	Returns the original expression used to create this EvaluableExpression.
 */
@@ -349,4 +310,10 @@ func (this *EvaluableExpression) Vars() []string {
 		}
 	}
 	return varlist
+}
+
+// VarsCausing returns a map of variable names which were involved in
+// boolean expressions' evaluation those resulted as value
+func (this *EvaluableExpression) VarsCausing(value bool) map[string]bool {
+	return this.boolFilter.getVarsCausing(value)
 }
